@@ -18,6 +18,38 @@ const OPEN_EXTS: &[&str] = &[
     "pfm", "heic", "heif", "hif", "dng", "cr2", "cr3", "nef", "nrw", "arw", "pef", "orf", "rw2", "raf", "abr", "grd",
 ];
 
+/// Unix file pickers (XDG portal and zenity) use case-sensitive globs. rfd prefixes each
+/// extension with `*.`, so character classes cover every casing without listing all variants.
+/// Windows and macOS expect literal extensions and already match them without case sensitivity.
+fn open_filter_extensions(extensions: &[&str]) -> Vec<String> {
+    extensions
+        .iter()
+        .map(|extension| {
+            if cfg!(all(unix, not(target_os = "macos"))) {
+                let mut pattern = String::new();
+                for c in extension.chars() {
+                    if c.is_ascii_alphabetic() {
+                        pattern.push('[');
+                        pattern.push(c.to_ascii_lowercase());
+                        pattern.push(c.to_ascii_uppercase());
+                        pattern.push(']');
+                    } else {
+                        pattern.push(c);
+                    }
+                }
+                pattern
+            } else {
+                (*extension).to_string()
+            }
+        })
+        .collect()
+}
+
+/// Shared filters for File › Open and the single-file import picker.
+fn open_dialog() -> rfd::FileDialog {
+    rfd::FileDialog::new().add_filter("All Formats", &open_filter_extensions(OPEN_EXTS)).add_filter("PhotoCraft", &open_filter_extensions(&["pcraft"]))
+}
+
 /// File › Save As formats: (filter name, extensions). The filter matching the suggested name's
 /// extension comes first, so a .pcraft document saves as .pcraft by default and everything else
 /// keeps defaulting to Photoshop.
@@ -164,18 +196,12 @@ pub fn native(automation: Option<photocraft_automation::AuthorizedWorkspace>) ->
             crate::crash_guard::guard("Export", || photocraft_io::export(doc, path, &opts).map(|r| (r.bytes, r.warnings)).map_err(|e| e.to_string()))
         })),
         pick_open: Some(Box::new(|| {
-            let path = rfd::FileDialog::new().add_filter("All Formats", OPEN_EXTS).add_filter("PhotoCraft", &["pcraft"]).pick_file()?;
+            let path = open_dialog().pick_file()?;
             // A read failure goes back to the app, which reports it like any other open failure.
             let bytes = photocraft_format::read_file(&path).map_err(|e| e.to_string());
             Some((path.to_string_lossy().to_string(), bytes))
         })),
-        pick_open_paths: Some(Box::new(|| {
-            rfd::FileDialog::new()
-                .add_filter("All Formats", OPEN_EXTS)
-                .add_filter("PhotoCraft", &["pcraft"])
-                .pick_files()
-                .map(|paths| paths.into_iter().map(|path| path.to_string_lossy().into_owned()).collect())
-        })),
+        pick_open_paths: Some(Box::new(|| open_dialog().pick_files().map(|paths| paths.into_iter().map(|path| path.to_string_lossy().into_owned()).collect()))),
         pick_save: Some(Box::new(|suggested: &str| {
             let p = std::path::Path::new(suggested);
             let mut d = rfd::FileDialog::new();
@@ -311,6 +337,32 @@ mod tests {
     use photocraft_format::list_recovery;
     use photocraft_ui_egui::{PhotocraftApp, prefs_ui};
     use serde_json::json;
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn open_filters_cover_uppercase_and_mixed_case_extensions() {
+        let patterns = open_filter_extensions(OPEN_EXTS);
+        for (extension, expected) in [
+            ("jpg", "[jJ][pP][gG]"),
+            ("jpeg", "[jJ][pP][eE][gG]"),
+            ("png", "[pP][nN][gG]"),
+            ("orf", "[oO][rR][fF]"),
+            ("cr2", "[cC][rR]2"),
+            ("pcraft", "[pP][cC][rR][aA][fF][tT]"),
+        ] {
+            assert!(OPEN_EXTS.contains(&extension));
+            assert!(patterns.iter().any(|pattern| pattern == expected), "{extension} missing case-insensitive filter");
+        }
+        assert_eq!(open_filter_extensions(&["pcraft"]), ["[pP][cC][rR][aA][fF][tT]"]);
+        assert_eq!(patterns.len(), OPEN_EXTS.len());
+    }
+
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    #[test]
+    fn open_filters_keep_literal_extensions_on_windows_and_macos() {
+        assert_eq!(open_filter_extensions(OPEN_EXTS), OPEN_EXTS);
+        assert_eq!(open_filter_extensions(&["pcraft"]), ["pcraft"]);
+    }
 
     /// "Export As" formats must lead with their own filter, or the save panel appends the first one's extension (`photo.webp.psd`).
     #[test]
