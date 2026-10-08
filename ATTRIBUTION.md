@@ -82,3 +82,9 @@ next to the files:
 | `corpus/pngsuite/` | PngSuite | Willem van Schaik | <http://www.schaik.com/pngsuite/> | Public domain |
 
 Files copied into `corpus/` by hand (tiff, exr, raw) must be MIT, BSD or CC0.
+
+## PR evidence
+
+| Path | Title | Author | Source | License |
+|---|---|---|---|---|
+| `docs/pr-evidence/open-extension-case/after.png` | Native Open dialog showing uppercase JPG and ORF files after the filter fix | @AlanRockefeller | Original screenshot, 2026-10-08 | MIT OR Apache-2.0, licenses alongside the screenshot |
