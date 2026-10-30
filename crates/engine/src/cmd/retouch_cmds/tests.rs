@@ -2609,8 +2609,11 @@ fn clone_from_another_document_converts_its_colour_mode() {
     for c in 0..3 {
         assert!((got[c] - want[0]).abs() <= tol(8), "gray copied into every channel: {got:?} vs {want:?}");
     }
-    // Past the smaller source document's edge there is nothing to clone.
-    s.execute("paint.cloneStamp", json!({"points": [[38, 2]], "size": 2, "hardness": 100, "aligned": false})).unwrap();
+    // Aligned, (38, 2) maps to source (20, -16): past the smaller source document's edge there is
+    // nothing to clone, so the destination keeps its pixels.
+    let before = doc_rgba(&s, 1, 38, 2);
+    s.execute("paint.cloneStamp", json!({"points": [[38, 2]], "size": 2, "hardness": 100})).unwrap();
+    assert_eq!(doc_rgba(&s, 1, 38, 2), before, "no source pixels: the destination is unchanged");
 
     let mut s = two_documents(8, |_, _| [0.0, 1.0, 1.0, 1.0], |_, _| [1.0, 1.0, 1.0, 1.0], [5, 5]);
     s.execute("file.new", json!({"width": 16, "height": 16, "depth": 8, "mode": "cmyk"})).unwrap();
